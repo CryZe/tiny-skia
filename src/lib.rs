@@ -28,6 +28,8 @@ See the `examples/` directory for usage examples.
 #![allow(clippy::neg_cmp_op_on_partial_ord)]
 #![allow(clippy::too_many_arguments)]
 
+#![feature(stdsimd)]
+
 #[cfg(not(any(feature = "std", feature = "libm")))]
 compile_error!("You have to activate either the `std` or the `libm` feature.");
 

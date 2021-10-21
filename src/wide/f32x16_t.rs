@@ -80,6 +80,9 @@ impl f32x16 {
     }
 
     pub fn round_int(&self) -> Self {
+        // TODO: really? Can't we just round? There's only a difference for
+        // numbers >i32::MAX and <i32::MIN. But it seems like round_int()
+        // behaves differently for those on the different platforms anyway?!
         Self([
             self.0[0].round_int().to_f32x8(),
             self.0[1].round_int().to_f32x8(),

@@ -33,6 +33,26 @@ cfg_if::cfg_if! {
                 u32x4_all_true(f32x4_eq(self.0, other.0))
             }
         }
+    } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+        use core::arch::aarch64::*;
+
+        #[derive(Clone, Copy, Debug)]
+        #[repr(C, align(16))]
+        pub struct f32x4(float32x4_t);
+
+        impl Default for f32x4 {
+            fn default() -> Self {
+                Self::splat(0.0)
+            }
+        }
+
+        impl PartialEq for f32x4 {
+            fn eq(&self, other: &Self) -> bool {
+                unsafe {
+                    vminvq_u32(vceqq_f32(self.0, other.0)) != 0
+                }
+            }
+        }
     } else {
         #[derive(Default, Clone, Copy, PartialEq, Debug)]
         #[repr(C, align(16))]
@@ -48,18 +68,25 @@ impl f32x4 {
         Self::from([n, n, n, n])
     }
 
+    // TODO: What are the semantics that we want here? Fast, IEEE-754 2008 NaN
+    // Absorb, IEEE-754 2019 NaN Prop, or IEEE-754 2019 NaN Absorb?
+    // https://gist.github.com/CryZe/30cc76f4629cb0846d5a9b8d13144649
     pub fn max(self, rhs: Self) -> Self {
         cfg_if::cfg_if! {
             if #[cfg(all(feature = "simd", target_feature = "sse"))] {
                 Self(max_m128(self.0, rhs.0))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
-                Self(f32x4_max(self.0, rhs.0))
+                Self(f32x4_pmax(self.0, rhs.0))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vmaxq_f32(self.0, rhs.0))
+                }
             } else {
                 Self([
-                    self.0[0].max(rhs.0[0]),
-                    self.0[1].max(rhs.0[1]),
-                    self.0[2].max(rhs.0[2]),
-                    self.0[3].max(rhs.0[3]),
+                    super::pmax(self.0[0], rhs.0[0]),
+                    super::pmax(self.0[1], rhs.0[1]),
+                    super::pmax(self.0[2], rhs.0[2]),
+                    super::pmax(self.0[3], rhs.0[3]),
                 ])
             }
         }
@@ -70,13 +97,17 @@ impl f32x4 {
             if #[cfg(all(feature = "simd", target_feature = "sse"))] {
                 Self(min_m128(self.0, rhs.0))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
-                Self(f32x4_min(self.0, rhs.0))
+                Self(f32x4_pmin(self.0, rhs.0))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vminq_f32(self.0, rhs.0))
+                }
             } else {
                 Self([
-                    self.0[0].min(rhs.0[0]),
-                    self.0[1].min(rhs.0[1]),
-                    self.0[2].min(rhs.0[2]),
-                    self.0[3].min(rhs.0[3]),
+                    super::pmin(self.0[0], rhs.0[0]),
+                    super::pmin(self.0[1], rhs.0[1]),
+                    super::pmin(self.0[2], rhs.0[2]),
+                    super::pmin(self.0[3], rhs.0[3]),
                 ])
             }
         }
@@ -104,6 +135,10 @@ impl core::ops::Add for f32x4 {
                 Self(add_m128(self.0, rhs.0))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_add(self.0, rhs.0))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vaddq_f32(self.0, rhs.0))
+                }
             } else {
                 Self([
                     self.0[0] + rhs.0[0],
@@ -131,6 +166,10 @@ impl core::ops::Sub for f32x4 {
                 Self(sub_m128(self.0, rhs.0))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_sub(self.0, rhs.0))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vsubq_f32(self.0, rhs.0))
+                }
             } else {
                 Self([
                     self.0[0] - rhs.0[0],
@@ -152,6 +191,10 @@ impl core::ops::Mul for f32x4 {
                 Self(mul_m128(self.0, rhs.0))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_mul(self.0, rhs.0))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vmulq_f32(self.0, rhs.0))
+                }
             } else {
                 Self([
                     self.0[0] * rhs.0[0],

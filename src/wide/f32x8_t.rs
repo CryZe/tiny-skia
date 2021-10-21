@@ -40,8 +40,33 @@ cfg_if::cfg_if! {
 
         impl PartialEq for f32x8 {
             fn eq(&self, other: &Self) -> bool {
-                u32x4_all_true(f32x4_eq(self.0, other.0)) &
-                u32x4_all_true(f32x4_eq(self.1, other.1))
+                u32x4_all_true(v128_and(
+                    f32x4_eq(self.0, other.0),
+                    f32x4_eq(self.1, other.1),
+                ))
+            }
+        }
+    } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+        use core::arch::aarch64::*;
+
+        #[derive(Clone, Copy, Debug)]
+        #[repr(C, align(32))]
+        pub struct f32x8(float32x4_t, float32x4_t);
+
+        impl Default for f32x8 {
+            fn default() -> Self {
+                Self::splat(0.0)
+            }
+        }
+
+        impl PartialEq for f32x8 {
+            fn eq(&self, other: &Self) -> bool {
+                unsafe {
+                    vminvq_u32(vandq_u32(
+                        vceqq_f32(self.0, other.0),
+                        vceqq_f32(self.1, other.1),
+                    )) != 0
+                }
             }
         }
     } else {
@@ -63,6 +88,10 @@ impl f32x8 {
         cfg_if::cfg_if! {
             if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_floor(self.0), f32x4_floor(self.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vrndmq_f32(self.0), vrndmq_f32(self.1))
+                }
             } else {
                 let roundtrip: f32x8 = cast(self.trunc_int().to_f32x8());
                 roundtrip - roundtrip.cmp_gt(self).blend(f32x8::splat(1.0), f32x8::default())
@@ -94,6 +123,13 @@ impl f32x8 {
                 Self(cmp_eq_mask_m128(self.0, rhs.0), cmp_eq_mask_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_eq(self.0, rhs.0), f32x4_eq(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vceqq_f32(self.0, rhs.0)),
+                        core::mem::transmute(vceqq_f32(self.1, rhs.1)),
+                    )
+                }
             } else {
                 Self(impl_x8_cmp!(self, eq, rhs, f32::from_bits(u32::MAX), 0.0))
             }
@@ -108,6 +144,13 @@ impl f32x8 {
                 Self(cmp_ge_mask_m128(self.0, rhs.0), cmp_ge_mask_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_ge(self.0, rhs.0), f32x4_ge(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vcgeq_f32(self.0, rhs.0)),
+                        core::mem::transmute(vcgeq_f32(self.1, rhs.1)),
+                    )
+                }
             } else {
                 Self(impl_x8_cmp!(self, ge, rhs, f32::from_bits(u32::MAX), 0.0))
             }
@@ -122,6 +165,13 @@ impl f32x8 {
                 Self(cmp_gt_mask_m128(self.0, rhs.0), cmp_gt_mask_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_gt(self.0, rhs.0), f32x4_gt(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vcgtq_f32(self.0, rhs.0)),
+                        core::mem::transmute(vcgtq_f32(self.1, rhs.1)),
+                    )
+                }
             } else {
                 Self(impl_x8_cmp!(self, gt, rhs, f32::from_bits(u32::MAX), 0.0))
             }
@@ -136,6 +186,13 @@ impl f32x8 {
                 Self(cmp_neq_mask_m128(self.0, rhs.0), cmp_neq_mask_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_ne(self.0, rhs.0), f32x4_ne(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vmvnq_u32(vceqq_f32(self.0, rhs.0))),
+                        core::mem::transmute(vmvnq_u32(vceqq_f32(self.1, rhs.1))),
+                    )
+                }
             } else {
                 Self(impl_x8_cmp!(self, ne, rhs, f32::from_bits(u32::MAX), 0.0))
             }
@@ -150,6 +207,13 @@ impl f32x8 {
                 Self(cmp_le_mask_m128(self.0, rhs.0), cmp_le_mask_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_le(self.0, rhs.0), f32x4_le(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vcleq_f32(self.0, rhs.0)),
+                        core::mem::transmute(vcleq_f32(self.1, rhs.1)),
+                    )
+                }
             } else {
                 Self(impl_x8_cmp!(self, le, rhs, f32::from_bits(u32::MAX), 0.0))
             }
@@ -164,6 +228,13 @@ impl f32x8 {
                 Self(cmp_lt_mask_m128(self.0, rhs.0), cmp_lt_mask_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_lt(self.0, rhs.0), f32x4_lt(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vcltq_f32(self.0, rhs.0)),
+                        core::mem::transmute(vcltq_f32(self.1, rhs.1)),
+                    )
+                }
             } else {
                 Self(impl_x8_cmp!(self, lt, rhs, f32::from_bits(u32::MAX), 0.0))
             }
@@ -178,6 +249,21 @@ impl f32x8 {
                 Self(blend_varying_m128(f.0, t.0, self.0), blend_varying_m128(f.1, t.1, self.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(v128_bitselect(t.0, f.0, self.0), v128_bitselect(t.1, f.1, self.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vbslq_u32(
+                            core::mem::transmute(self.0),
+                            core::mem::transmute(t.0),
+                            core::mem::transmute(f.0),
+                        )),
+                        core::mem::transmute(vbslq_u32(
+                            core::mem::transmute(self.1),
+                            core::mem::transmute(t.1),
+                            core::mem::transmute(f.1),
+                        )),
+                    )
+                }
             } else {
                 super::generic_bit_blend(self, t, f)
             }
@@ -188,6 +274,10 @@ impl f32x8 {
         cfg_if::cfg_if! {
             if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_abs(self.0), f32x4_abs(self.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vabsq_f32(self.0), vabsq_f32(self.1))
+                }
             } else {
                 let non_sign_bits = f32x8::splat(f32::from_bits(i32::MAX as u32));
                 self & non_sign_bits
@@ -202,9 +292,22 @@ impl f32x8 {
             } else if #[cfg(all(feature = "simd", target_feature = "sse2"))] {
                 Self(max_m128(self.0, rhs.0), max_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
-                Self(f32x4_max(self.0, rhs.0), f32x4_max(self.1, rhs.1))
+                Self(f32x4_pmax(self.0, rhs.0), f32x4_pmax(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vmaxq_f32(self.0, rhs.0), vmaxq_f32(self.1, rhs.1))
+                }
             } else {
-                Self(impl_x8_op!(self, max, rhs))
+                Self([
+                    super::pmax(self.0[0], rhs.0[0]),
+                    super::pmax(self.0[1], rhs.0[1]),
+                    super::pmax(self.0[2], rhs.0[2]),
+                    super::pmax(self.0[3], rhs.0[3]),
+                    super::pmax(self.0[4], rhs.0[4]),
+                    super::pmax(self.0[5], rhs.0[5]),
+                    super::pmax(self.0[6], rhs.0[6]),
+                    super::pmax(self.0[7], rhs.0[7]),
+                ])
             }
         }
     }
@@ -216,9 +319,22 @@ impl f32x8 {
             } else if #[cfg(all(feature = "simd", target_feature = "sse2"))] {
                 Self(min_m128(self.0, rhs.0), min_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
-                Self(f32x4_min(self.0, rhs.0), f32x4_min(self.1, rhs.1))
+                Self(f32x4_pmin(self.0, rhs.0), f32x4_pmin(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vminq_f32(self.0, rhs.0), vminq_f32(self.1, rhs.1))
+                }
             } else {
-                Self(impl_x8_op!(self, min, rhs))
+                Self([
+                    super::pmin(self.0[0], rhs.0[0]),
+                    super::pmin(self.0[1], rhs.0[1]),
+                    super::pmin(self.0[2], rhs.0[2]),
+                    super::pmin(self.0[3], rhs.0[3]),
+                    super::pmin(self.0[4], rhs.0[4]),
+                    super::pmin(self.0[5], rhs.0[5]),
+                    super::pmin(self.0[6], rhs.0[6]),
+                    super::pmin(self.0[7], rhs.0[7]),
+                ])
             }
         }
     }
@@ -226,7 +342,7 @@ impl f32x8 {
     pub fn is_finite(self) -> Self {
         let shifted_exp_mask = u32x8::splat(0xFF000000);
         let u: u32x8 = cast(self);
-        let shift_u = u << 1;
+        let shift_u = u.shl::<1>();
         let out = !(shift_u & shifted_exp_mask).cmp_eq(shifted_exp_mask);
         cast(out)
     }
@@ -239,10 +355,14 @@ impl f32x8 {
                 Self(round_m128!(self.0, Nearest), round_m128!(self.1, Nearest))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_nearest(self.0), f32x4_nearest(self.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vrndnq_f32(self.0), vrndnq_f32(self.1))
+                }
             } else {
                 let to_int = f32x8::splat(1.0 / f32::EPSILON);
                 let u: u32x8 = cast(self);
-                let e: i32x8 = cast((u >> 23) & u32x8::splat(0xff));
+                let e: i32x8 = cast(u.shr::<23>() & u32x8::splat(0xff));
                 let mut y: f32x8;
 
                 let no_op_magic = i32x8::splat(0x7f + 23);
@@ -279,6 +399,10 @@ impl f32x8 {
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 let rounded = self.round();
                 i32x8(i32x4_trunc_sat_f32x4(rounded.0), i32x4_trunc_sat_f32x4(rounded.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    i32x8(vcvtnq_s32_f32(self.0), vcvtnq_s32_f32(self.1))
+                }
             } else {
                 let rounded: [f32; 8] = cast(self.round());
                 let rounded_ints: i32x8 = cast([
@@ -291,10 +415,11 @@ impl f32x8 {
                     rounded[6] as i32,
                     rounded[7] as i32,
                 ]);
-                cast::<f32x8, i32x8>(self.is_finite()).blend(
-                    rounded_ints,
-                    i32x8::splat(i32::MIN)
-                )
+                // cast::<f32x8, i32x8>(self.is_finite()).blend(
+                //     rounded_ints,
+                //     i32x8::splat(i32::MIN)
+                // )
+                rounded_ints
             }
         }
     }
@@ -306,10 +431,11 @@ impl f32x8 {
             } else if #[cfg(all(feature = "simd", target_feature = "sse2"))] {
                 i32x8(truncate_m128_to_m128i(self.0), truncate_m128_to_m128i(self.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
-                cast(Self(
-                    i32x4_trunc_sat_f32x4(self.0),
-                    i32x4_trunc_sat_f32x4(self.1),
-                ))
+                i32x8(i32x4_trunc_sat_f32x4(self.0), i32x4_trunc_sat_f32x4(self.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    i32x8(vcvtq_s32_f32(self.0), vcvtq_s32_f32(self.1))
+                }
             } else {
                 let n: [f32; 8] = cast(self);
                 let ints: i32x8 = cast([
@@ -322,7 +448,10 @@ impl f32x8 {
                     n[6].trunc() as i32,
                     n[7].trunc() as i32,
                 ]);
-                cast::<f32x8, i32x8>(self.is_finite()).blend(ints,i32x8::splat(i32::MIN))
+                // TODO: is this really necessary?
+                // cast::<f32x8,
+                // i32x8>(self.is_finite()).blend(ints,i32x8::splat(i32::MIN))
+                ints
             }
         }
     }
@@ -339,6 +468,11 @@ impl f32x8 {
                     f32x4_div(one, self.0),
                     f32x4_div(one, self.1),
                 )
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                // TODO: Is estimate fine?
+                unsafe {
+                    Self(vrecpeq_f32(self.0), vrecpeq_f32(self.1))
+                }
             } else {
                 Self::from([
                     1.0 / self.0[0],
@@ -366,6 +500,11 @@ impl f32x8 {
                     f32x4_div(one, f32x4_sqrt(self.0)),
                     f32x4_div(one, f32x4_sqrt(self.1)),
                 )
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                // TODO: Is an estimate fine?
+                unsafe {
+                    Self(vrsqrteq_f32(self.0), vrsqrteq_f32(self.1))
+                }
             } else {
                 Self::from([
                     1.0 / self.0[0].sqrt(),
@@ -389,6 +528,10 @@ impl f32x8 {
                 Self(sqrt_m128(self.0), sqrt_m128(self.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_sqrt(self.0), f32x4_sqrt(self.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vsqrtq_f32(self.0), vsqrtq_f32(self.1))
+                }
             } else {
                 Self::from([
                     self.0[0].sqrt(),
@@ -428,6 +571,10 @@ impl core::ops::Add for f32x8 {
                 Self(add_m128(self.0, rhs.0), add_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_add(self.0, rhs.0), f32x4_add(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vaddq_f32(self.0, rhs.0), vaddq_f32(self.1, rhs.1))
+                }
             } else {
                 Self(impl_x8_op!(self, add, rhs))
             }
@@ -452,6 +599,10 @@ impl core::ops::Sub for f32x8 {
                 Self(sub_m128(self.0, rhs.0), sub_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_sub(self.0, rhs.0), f32x4_sub(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vsubq_f32(self.0, rhs.0), vsubq_f32(self.1, rhs.1))
+                }
             } else {
                 Self(impl_x8_op!(self, sub, rhs))
             }
@@ -470,6 +621,10 @@ impl core::ops::Mul for f32x8 {
                 Self(mul_m128(self.0, rhs.0), mul_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_mul(self.0, rhs.0), f32x4_mul(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vmulq_f32(self.0, rhs.0), vmulq_f32(self.1, rhs.1))
+                }
             } else {
                 Self(impl_x8_op!(self, mul, rhs))
             }
@@ -494,6 +649,10 @@ impl core::ops::Div for f32x8 {
                 Self(div_m128(self.0, rhs.0), div_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(f32x4_div(self.0, rhs.0), f32x4_div(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(vdivq_f32(self.0, rhs.0), vdivq_f32(self.1, rhs.1))
+                }
             } else {
                 Self(impl_x8_op!(self, div, rhs))
             }
@@ -512,6 +671,19 @@ impl core::ops::BitAnd for f32x8 {
                 Self(bitand_m128(self.0, rhs.0), bitand_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(v128_and(self.0, rhs.0), v128_and(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vandq_u32(
+                            core::mem::transmute(self.0),
+                            core::mem::transmute(rhs.0),
+                        )),
+                        core::mem::transmute(vandq_u32(
+                            core::mem::transmute(self.1),
+                            core::mem::transmute(rhs.1),
+                        )),
+                    )
+                }
             } else {
                 Self([
                     f32::from_bits(self.0[0].to_bits() & rhs.0[0].to_bits()),
@@ -539,6 +711,19 @@ impl core::ops::BitOr for f32x8 {
                 Self(bitor_m128(self.0, rhs.0), bitor_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(v128_or(self.0, rhs.0), v128_or(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vorrq_u32(
+                            core::mem::transmute(self.0),
+                            core::mem::transmute(rhs.0),
+                        )),
+                        core::mem::transmute(vorrq_u32(
+                            core::mem::transmute(self.1),
+                            core::mem::transmute(rhs.1),
+                        )),
+                    )
+                }
             } else {
                 Self([
                     f32::from_bits(self.0[0].to_bits() | rhs.0[0].to_bits()),
@@ -566,6 +751,19 @@ impl core::ops::BitXor for f32x8 {
                 Self(bitxor_m128(self.0, rhs.0), bitxor_m128(self.1, rhs.1))
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(v128_xor(self.0, rhs.0), v128_xor(self.1, rhs.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(veorq_u32(
+                            core::mem::transmute(self.0),
+                            core::mem::transmute(rhs.0),
+                        )),
+                        core::mem::transmute(veorq_u32(
+                            core::mem::transmute(self.1),
+                            core::mem::transmute(rhs.1),
+                        )),
+                    )
+                }
             } else {
                 Self([
                     f32::from_bits(self.0[0].to_bits() ^ rhs.0[0].to_bits()),
@@ -601,6 +799,13 @@ impl core::ops::Not for f32x8 {
                 Self(self.0.not(), self.1.not())
             } else if #[cfg(all(feature = "simd", target_feature = "simd128"))] {
                 Self(v128_not(self.0), v128_not(self.1))
+            } else if #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))] {
+                unsafe {
+                    Self(
+                        core::mem::transmute(vmvnq_u32(core::mem::transmute(self.0))),
+                        core::mem::transmute(vmvnq_u32(core::mem::transmute(self.1))),
+                    )
+                }
             } else {
                 self ^ Self::splat(cast(u32::MAX))
             }
