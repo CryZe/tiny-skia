@@ -45,6 +45,19 @@ impl PathBuilder {
         }
     }
 
+    /// Creates a builder from an existing path.
+    ///
+    /// This can also be used to reuse the memory allocated by the path by
+    /// clearing the builder afterwards.
+    pub fn from_path(path: Path) -> Self {
+        PathBuilder {
+            verbs: path.verbs,
+            points: path.points,
+            last_move_to_index: usize::MAX,
+            move_to_required: true,
+        }
+    }
+
     /// Creates a new builder with a specified capacity.
     ///
     /// Number of points depends on a verb type:
